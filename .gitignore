@@ -1,0 +1,32 @@
+# Build directory
+build/
+cmake-build-*/
+
+# Qt Creator
+*.pro.user*
+*.qmlproject.user*
+CMakeLists.txt.user*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Compiled files
+*.o
+*.obj
+*.moc
+moc_*.cpp
+qrc_*.cpp
+*.qmlc
+*.jsc
+
+# Generated files
+.qmlls.ini
+compile_commands.json
+
+# Clangd cache
+.cache/
+.clangd

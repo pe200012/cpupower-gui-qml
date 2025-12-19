@@ -1,0 +1,56 @@
+[Desktop Entry]
+Name=CPU Power GUI
+Name[de]=CPU-Energie-GUI
+Name[es]=CPU Power GUI
+Name[fr]=CPU Power GUI
+Name[it]=CPU Power GUI
+Name[nl]=CPU Power GUI
+Name[zh_CN]=CPU频率控制
+
+GenericName=CPU Frequency Manager
+GenericName[de]=CPU-Frequenzmanager
+GenericName[es]=Administrador de frecuencia de CPU
+GenericName[fr]=Gestionnaire de fréquence CPU
+GenericName[it]=Gestore frequenza CPU
+GenericName[nl]=CPU-frequentiebeheer
+GenericName[zh_CN]=CPU频率管理器
+
+Comment=GUI utility to change the CPU frequency and governor
+Comment[de]=GUI-Werkzeug zum Ändern der CPU-Frequenz und des Governors
+Comment[es]=Utilidad GUI para cambiar la frecuencia y el gobernador de la CPU
+Comment[fr]=Utilitaire graphique pour modifier la fréquence et le gouverneur du CPU
+Comment[it]=Utilità GUI per modificare la frequenza e il governor della CPU
+Comment[nl]=GUI-hulpprogramma om de CPU-frequentie en governor te wijzigen
+Comment[zh_CN]=用于更改CPU频率和调节器的图形界面工具
+
+Exec=cpupower-gui-qml
+Icon=io.github.cpupower_gui.qt
+Terminal=false
+Type=Application
+Categories=System;Settings;HardwareSettings;
+Keywords=cpu;frequency;governor;power;performance;energy;
+StartupNotify=true
+
+# Desktop actions
+Actions=performance;balanced;powersave;
+
+[Desktop Action performance]
+Name=Performance Mode
+Name[de]=Leistungsmodus
+Name[es]=Modo de rendimiento
+Name[fr]=Mode performances
+Exec=cpupower-gui-qml --profile Performance
+
+[Desktop Action balanced]
+Name=Balanced Mode
+Name[de]=Ausgeglichener Modus
+Name[es]=Modo equilibrado
+Name[fr]=Mode équilibré
+Exec=cpupower-gui-qml --profile Balanced
+
+[Desktop Action powersave]
+Name=Power Save Mode
+Name[de]=Energiesparmodus
+Name[es]=Modo de ahorro de energía
+Name[fr]=Mode économie d'énergie
+Exec=cpupower-gui-qml --profile "Power Save"

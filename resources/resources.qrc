@@ -1,0 +1,6 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <file alias="icons/cpupower-gui.svg">../cpupower-gui/data/icons/hicolor/scalable/apps/cpupower-gui.svg</file>
+    </qresource>
+</RCC>
