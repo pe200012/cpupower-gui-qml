@@ -52,17 +52,15 @@ src_compile() {
 	mkdir -p "${helper_builddir}" || die
 	cd "${helper_builddir}" || die
 
+	# All paths are relative to CMAKE_INSTALL_PREFIX for proper DESTDIR support
 	local helper_cmakeargs=(
 		-DCMAKE_INSTALL_PREFIX="${EPREFIX}/usr"
 		-DHELPER_INSTALL_DIR="libexec"
 		-DDBUS_SYSTEM_SERVICES_DIR="share/dbus-1/system-services"
 		-DDBUS_SYSTEM_CONF_DIR="share/dbus-1/system.d"
 		-DPOLKIT_ACTIONS_DIR="share/polkit-1/actions"
+		-DSYSTEMD_SYSTEM_UNIT_DIR="lib/systemd/system"
 	)
-
-	if use systemd; then
-		helper_cmakeargs+=( -DSYSTEMD_SYSTEM_UNIT_DIR="lib/systemd/system" )
-	fi
 
 	cmake "${helper_cmakeargs[@]}" "${S}/helper" || die "Helper cmake failed"
 	emake
