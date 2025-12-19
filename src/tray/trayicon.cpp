@@ -146,11 +146,10 @@ void TrayIcon::setupMenu()
 
     menu->addSeparator();
 
-    // Quit action
-    QAction *quitAction = new QAction(i18n("Quit"), menu);
-    quitAction->setIcon(QIcon::fromTheme(QStringLiteral("application-exit")));
-    connect(quitAction, &QAction::triggered, this, &TrayIcon::quitRequested);
-    menu->addAction(quitAction);
-
+    // Use the standard quit action from KStatusNotifierItem
+    // KStatusNotifierItem already provides a Quit action, so we connect to its signal
     m_sni->setContextMenu(menu);
+    
+    // Connect the standard quit action
+    connect(m_sni, &KStatusNotifierItem::quitRequested, this, &TrayIcon::quitRequested);
 }
