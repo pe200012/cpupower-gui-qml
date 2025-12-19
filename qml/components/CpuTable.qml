@@ -15,7 +15,7 @@ ColumnLayout {
     id: cpuTable
     
     // Properties
-    property alias model: listView.model
+    property var model
     property int selectedCpu: -1
     
     // Signals
@@ -78,12 +78,17 @@ ColumnLayout {
         id: listView
         Layout.fillWidth: true
         Layout.fillHeight: true
+        Layout.minimumHeight: contentHeight
+        Layout.preferredHeight: contentHeight
         clip: true
+        
+        model: cpuTable.model
         
         delegate: Controls.ItemDelegate {
             id: cpuDelegate
             
             width: listView.width
+            height: 40
             
             required property int index
             required property int cpuNumber
@@ -109,17 +114,17 @@ ColumnLayout {
                 }
                 
                 Controls.Label {
-                    text: (cpuDelegate.freqMin / 1000).toFixed(0)
+                    text: cpuDelegate.freqMin.toFixed(0)
                     Layout.preferredWidth: 80
                 }
                 
                 Controls.Label {
-                    text: (cpuDelegate.freqMax / 1000).toFixed(0)
+                    text: cpuDelegate.freqMax.toFixed(0)
                     Layout.preferredWidth: 80
                 }
                 
                 Controls.Label {
-                    text: cpuDelegate.online ? (cpuDelegate.currentFreq / 1000).toFixed(0) : "-"
+                    text: cpuDelegate.online ? cpuDelegate.currentFreq.toFixed(0) : "-"
                     Layout.preferredWidth: 100
                     font.bold: true
                     color: Kirigami.Theme.positiveTextColor
@@ -144,8 +149,10 @@ ColumnLayout {
     
     // Empty state
     Kirigami.PlaceholderMessage {
-        anchors.centerIn: parent
+        Layout.fillWidth: true
+        Layout.fillHeight: true
         visible: listView.count === 0
         text: i18n("No CPUs detected")
+        explanation: i18n("Could not read CPU information from /sys/devices/system/cpu")
     }
 }

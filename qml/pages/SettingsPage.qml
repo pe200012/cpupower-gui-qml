@@ -153,8 +153,9 @@ Kirigami.ScrollablePage {
             
             contentItem: CpuTable {
                 id: cpuTableView
-                Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(app.cpuModel.count * 40 + 40, 300)
+                
+                // Calculate height based on model count (header + rows)
+                implicitHeight: Math.min((app.cpuModel ? app.cpuModel.count : 0) * 40 + 50, 400)
                 
                 model: app.cpuModel
                 selectedCpu: app.currentCpu
