@@ -70,33 +70,6 @@ bool HelperService::checkPolkitAuthorization(const QString &sender, const QStrin
         return m_authorizedSenders[cacheKey];
     }
     
-    // Query PolicyKit
-    QDBusMessage msg = QDBusMessage::createMethodCall(
-        QStringLiteral("org.freedesktop.PolicyKit1"),
-        QStringLiteral("/org/freedesktop/PolicyKit1/Authority"),
-        QStringLiteral("org.freedesktop.PolicyKit1.Authority"),
-        QStringLiteral("CheckAuthorization")
-    );
-    
-    // Subject: system-bus-name
-    QVariantMap subjectDetails;
-    subjectDetails[QStringLiteral("name")] = sender;
-    
-    QVariantList subject;
-    subject << QStringLiteral("system-bus-name") << subjectDetails;
-    
-    // Details (empty)
-    QVariantMap details;
-    
-    // Flags: AllowUserInteraction = 1
-    quint32 flags = 1;
-    
-    // Cancellation ID (empty)
-    QString cancellationId;
-    
-    msg << QVariant::fromValue(QDBusArgument() << QStringLiteral("system-bus-name") << subjectDetails);
-    
-    // Build the subject tuple manually
     QDBusConnection systemBus = QDBusConnection::systemBus();
     
     QDBusMessage polkitMsg = QDBusMessage::createMethodCall(
@@ -117,11 +90,22 @@ bool HelperService::checkPolkitAuthorization(const QString &sender, const QStrin
     subjectArg.endMap();
     subjectArg.endStructure();
     
-    polkitMsg << QVariant::fromValue(subjectArg);  // subject
-    polkitMsg << actionId;                          // action_id
-    polkitMsg << details;                           // details
-    polkitMsg << flags;                             // flags
-    polkitMsg << cancellationId;                    // cancellation_id
+    // Details as a{ss} (map of string to string) - empty
+    QDBusArgument detailsArg;
+    detailsArg.beginMap(QMetaType::QString, QMetaType::QString);
+    detailsArg.endMap();
+    
+    // Flags: AllowUserInteraction = 1
+    quint32 flags = 1;
+    
+    // Cancellation ID (empty)
+    QString cancellationId;
+    
+    polkitMsg << QVariant::fromValue(subjectArg);   // subject (sa{sv})
+    polkitMsg << actionId;                           // action_id (s)
+    polkitMsg << QVariant::fromValue(detailsArg);   // details (a{ss})
+    polkitMsg << flags;                              // flags (u)
+    polkitMsg << cancellationId;                     // cancellation_id (s)
     
     QDBusMessage reply = systemBus.call(polkitMsg);
     
@@ -138,14 +122,24 @@ bool HelperService::checkPolkitAuthorization(const QString &sender, const QStrin
     QDBusArgument resultArg = reply.arguments().at(0).value<QDBusArgument>();
     bool isAuthorized = false;
     bool isChallenge = false;
-    QVariantMap resultDetails;
     
     resultArg.beginStructure();
-    resultArg >> isAuthorized >> isChallenge >> resultDetails;
+    resultArg >> isAuthorized >> isChallenge;
+    // Skip the details map
+    resultArg.beginMap();
+    while (!resultArg.atEnd()) {
+        QString key, value;
+        resultArg.beginMapEntry();
+        resultArg >> key >> value;
+        resultArg.endMapEntry();
+    }
+    resultArg.endMap();
     resultArg.endStructure();
     
-    // Cache result
-    m_authorizedSenders[cacheKey] = isAuthorized;
+    // Cache result (only if authorized without challenge)
+    if (isAuthorized && !isChallenge) {
+        m_authorizedSenders[cacheKey] = true;
+    }
     
     return isAuthorized;
 }
