@@ -47,6 +47,7 @@ void Application::initializeBackend()
     // Connect D-Bus signals
     connect(m_dbusHelper.get(), &DbusHelper::helperReady, this, &Application::onDbusHelperReady);
     connect(m_dbusHelper.get(), &DbusHelper::errorOccurred, this, &Application::onDbusError);
+    connect(m_dbusHelper.get(), &DbusHelper::batchCompleted, this, &Application::onBatchCompleted);
 
     // Initialize models for first CPU
     if (!m_sysfsReader->availableCpus().isEmpty()) {
@@ -226,6 +227,12 @@ void Application::applyChanges()
         return;
     }
 
+    // Check if an operation is already in progress
+    if (m_dbusHelper->isOperationInProgress()) {
+        setStatusMessage(tr("Operation already in progress"));
+        return;
+    }
+
     setStatusMessage(tr("Applying changes..."));
 
     QList<int> cpusToApply;
@@ -235,84 +242,46 @@ void Application::applyChanges()
         cpusToApply.append(m_currentCpu);
     }
 
-    bool allSuccess = true;
-    QStringList errors;
+    // Begin batch mode - queue all operations
+    m_dbusHelper->beginBatch();
 
     for (int cpu : cpusToApply) {
-        if (!applyChangesToCpu(cpu)) {
-            allSuccess = false;
-            errors.append(tr("Failed to apply changes to CPU %1").arg(cpu));
+        // Apply frequency settings (min and max together)
+        if (m_hasPendingMinFreq || m_hasPendingMaxFreq) {
+            qint64 fmin = m_hasPendingMinFreq ? m_pendingMinFreq : m_sysfsReader->minFrequency(cpu);
+            qint64 fmax = m_hasPendingMaxFreq ? m_pendingMaxFreq : m_sysfsReader->maxFrequency(cpu);
+
+            m_dbusHelper->updateCpuSettingsAsync(cpu, static_cast<int>(fmin), static_cast<int>(fmax));
         }
-    }
 
-    // Clear pending changes regardless of outcome
-    clearPendingChanges();
-    setUnsavedChanges(false);
-
-    // Refresh CPU info to show current state
-    refreshCpuInfo();
-
-    if (allSuccess) {
-        setStatusMessage(tr("Changes applied successfully"));
-        emit applySuccess();
-    } else {
-        setStatusMessage(tr("Some changes failed to apply"));
-        emit applyFailed(errors.join(QStringLiteral("; ")));
-    }
-}
-
-bool Application::applyChangesToCpu(int cpu)
-{
-    bool success = true;
-    int result;
-
-    // Apply frequency settings (min and max together)
-    if (m_hasPendingMinFreq || m_hasPendingMaxFreq) {
-        qint64 fmin = m_hasPendingMinFreq ? m_pendingMinFreq : m_sysfsReader->minFrequency(cpu);
-        qint64 fmax = m_hasPendingMaxFreq ? m_pendingMaxFreq : m_sysfsReader->maxFrequency(cpu);
-
-        // Convert kHz to integer (D-Bus uses int)
-        result = m_dbusHelper->updateCpuSettings(cpu, static_cast<int>(fmin), static_cast<int>(fmax));
-        if (result != 0) {
-            qWarning() << "Failed to update CPU" << cpu << "frequency settings, error:" << result;
-            success = false;
+        // Apply governor
+        if (m_hasPendingGovernor && !m_pendingGovernor.isEmpty()) {
+            m_dbusHelper->updateCpuGovernorAsync(cpu, m_pendingGovernor);
         }
-    }
 
-    // Apply governor
-    if (m_hasPendingGovernor && !m_pendingGovernor.isEmpty()) {
-        result = m_dbusHelper->updateCpuGovernor(cpu, m_pendingGovernor);
-        if (result != 0) {
-            qWarning() << "Failed to update CPU" << cpu << "governor, error:" << result;
-            success = false;
+        // Apply energy preference
+        if (m_hasPendingEnergyPref && !m_pendingEnergyPref.isEmpty()) {
+            if (m_sysfsReader->isEnergyPrefAvailable(cpu)) {
+                m_dbusHelper->updateCpuEnergyPrefsAsync(cpu, m_pendingEnergyPref);
+            }
         }
-    }
 
-    // Apply energy preference
-    if (m_hasPendingEnergyPref && !m_pendingEnergyPref.isEmpty()) {
-        if (m_sysfsReader->isEnergyPrefAvailable(cpu)) {
-            result = m_dbusHelper->updateCpuEnergyPrefs(cpu, m_pendingEnergyPref);
-            if (result != 0) {
-                qWarning() << "Failed to update CPU" << cpu << "energy pref, error:" << result;
-                success = false;
+        // Apply online/offline state (CPU 0 cannot be offlined)
+        if (m_hasPendingOnline && cpu != 0) {
+            if (m_pendingOnline) {
+                m_dbusHelper->setCpuOnlineAsync(cpu);
+            } else {
+                m_dbusHelper->setCpuOfflineAsync(cpu);
             }
         }
     }
 
-    // Apply online/offline state (CPU 0 cannot be offlined)
-    if (m_hasPendingOnline && cpu != 0) {
-        if (m_pendingOnline) {
-            result = m_dbusHelper->setCpuOnline(cpu);
-        } else {
-            result = m_dbusHelper->setCpuOffline(cpu);
-        }
-        if (result != 0) {
-            qWarning() << "Failed to change CPU" << cpu << "online state, error:" << result;
-            success = false;
-        }
-    }
+    // Clear pending changes - results will be handled in onBatchCompleted
+    clearPendingChanges();
+    setUnsavedChanges(false);
 
-    return success;
+    // End batch and start processing - completion will trigger onBatchCompleted
+    m_dbusHelper->endBatch();
 }
 
 void Application::clearPendingChanges()
@@ -328,6 +297,20 @@ void Application::clearPendingChanges()
     m_hasPendingGovernor = false;
     m_hasPendingEnergyPref = false;
     m_hasPendingOnline = false;
+}
+
+void Application::onBatchCompleted(bool allSucceeded, const QStringList &errors)
+{
+    // Refresh CPU info to show current state
+    refreshCpuInfo();
+
+    if (allSucceeded) {
+        setStatusMessage(tr("Changes applied successfully"));
+        emit applySuccess();
+    } else {
+        setStatusMessage(tr("Some changes failed to apply"));
+        emit applyFailed(errors.join(QStringLiteral("; ")));
+    }
 }
 
 void Application::resetChanges()
@@ -353,11 +336,16 @@ void Application::applyProfile(const QString &profileName)
         return;
     }
 
+    // Check if an operation is already in progress
+    if (m_dbusHelper->isOperationInProgress()) {
+        setStatusMessage(tr("Operation already in progress"));
+        return;
+    }
+
     setStatusMessage(tr("Applying profile: %1").arg(profileName));
 
-    bool allSuccess = true;
-    QStringList errors;
-    int result;
+    // Begin batch mode - queue all operations
+    m_dbusHelper->beginBatch();
 
     // Apply settings for each CPU in the profile
     for (auto it = profile->settings.constBegin(); it != profile->settings.constEnd(); ++it) {
@@ -373,63 +361,32 @@ void Application::applyProfile(const QString &profileName)
         // Apply online/offline state first (CPU 0 cannot be offlined)
         if (cpu != 0) {
             if (entry.online) {
-                result = m_dbusHelper->setCpuOnline(cpu);
+                m_dbusHelper->setCpuOnlineAsync(cpu);
             } else {
-                result = m_dbusHelper->setCpuOffline(cpu);
-            }
-            if (result != 0) {
-                qWarning() << "Failed to set CPU" << cpu << "online state, error:" << result;
-                errors.append(tr("Failed to set CPU %1 online state").arg(cpu));
-                allSuccess = false;
-            }
-
-            // If we're setting CPU offline, skip other settings
-            if (!entry.online) {
+                m_dbusHelper->setCpuOfflineAsync(cpu);
+                // If we're setting CPU offline, skip other settings for this CPU
                 continue;
             }
         }
 
         // Apply frequency settings
         if (entry.freqMin > 0 && entry.freqMax > 0) {
-            result = m_dbusHelper->updateCpuSettings(cpu, static_cast<int>(entry.freqMin), static_cast<int>(entry.freqMax));
-            if (result != 0) {
-                qWarning() << "Failed to update CPU" << cpu << "frequency, error:" << result;
-                errors.append(tr("Failed to set CPU %1 frequency").arg(cpu));
-                allSuccess = false;
-            }
+            m_dbusHelper->updateCpuSettingsAsync(cpu, static_cast<int>(entry.freqMin), static_cast<int>(entry.freqMax));
         }
 
         // Apply governor
         if (!entry.governor.isEmpty()) {
-            result = m_dbusHelper->updateCpuGovernor(cpu, entry.governor);
-            if (result != 0) {
-                qWarning() << "Failed to update CPU" << cpu << "governor, error:" << result;
-                errors.append(tr("Failed to set CPU %1 governor").arg(cpu));
-                allSuccess = false;
-            }
+            m_dbusHelper->updateCpuGovernorAsync(cpu, entry.governor);
         }
 
         // Apply energy preference
         if (!entry.energyPref.isEmpty() && m_sysfsReader->isEnergyPrefAvailable(cpu)) {
-            result = m_dbusHelper->updateCpuEnergyPrefs(cpu, entry.energyPref);
-            if (result != 0) {
-                qWarning() << "Failed to update CPU" << cpu << "energy pref, error:" << result;
-                errors.append(tr("Failed to set CPU %1 energy pref").arg(cpu));
-                allSuccess = false;
-            }
+            m_dbusHelper->updateCpuEnergyPrefsAsync(cpu, entry.energyPref);
         }
     }
 
-    // Refresh CPU info to show current state
-    refreshCpuInfo();
-
-    if (allSuccess) {
-        setStatusMessage(tr("Profile applied: %1").arg(profileName));
-        emit applySuccess();
-    } else {
-        setStatusMessage(tr("Profile applied with errors: %1").arg(profileName));
-        emit applyFailed(errors.join(QStringLiteral("; ")));
-    }
+    // End batch and start processing - completion will trigger onBatchCompleted
+    m_dbusHelper->endBatch();
 }
 
 void Application::refreshCpuInfo()

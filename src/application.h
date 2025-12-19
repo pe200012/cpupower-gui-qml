@@ -128,6 +128,7 @@ signals:
 private slots:
     void onDbusHelperReady(bool ready);
     void onDbusError(const QString &error);
+    void onBatchCompleted(bool allSucceeded, const QStringList &errors);
 
 private:
     void initializeBackend();
@@ -173,7 +174,6 @@ private:
 
     // Helper methods
     void clearPendingChanges();
-    bool applyChangesToCpu(int cpu);
 
     // Frequency monitoring timer
     QTimer *m_freqMonitorTimer{nullptr};
