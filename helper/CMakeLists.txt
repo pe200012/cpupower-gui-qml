@@ -26,18 +26,27 @@ target_link_libraries(cpupower-gui-helper PRIVATE
     Qt6::DBus
 )
 
-# Installation paths - use GNUInstallDirs for proper defaults
-include(GNUInstallDirs)
+# Installation paths - all relative to CMAKE_INSTALL_PREFIX for proper DESTDIR support
+# These can be overridden via -D on the command line
+if(NOT DEFINED HELPER_INSTALL_DIR)
+    set(HELPER_INSTALL_DIR "libexec")
+endif()
 
-# These are relative to CMAKE_INSTALL_PREFIX and work correctly with DESTDIR
-set(HELPER_INSTALL_DIR "${CMAKE_INSTALL_LIBEXECDIR}" CACHE PATH "Helper installation directory")
-set(DBUS_SYSTEM_SERVICES_DIR "${CMAKE_INSTALL_DATADIR}/dbus-1/system-services" CACHE PATH "D-Bus system services directory")
-set(DBUS_SYSTEM_CONF_DIR "${CMAKE_INSTALL_DATADIR}/dbus-1/system.d" CACHE PATH "D-Bus system configuration directory")
-set(POLKIT_ACTIONS_DIR "${CMAKE_INSTALL_DATADIR}/polkit-1/actions" CACHE PATH "PolicyKit actions directory")
-set(SYSTEMD_SYSTEM_UNIT_DIR "lib/systemd/system" CACHE PATH "Systemd system unit directory")
+if(NOT DEFINED DBUS_SYSTEM_SERVICES_DIR)
+    set(DBUS_SYSTEM_SERVICES_DIR "share/dbus-1/system-services")
+endif()
 
-# Full path to helper binary (used in service files)
-set(HELPER_FULL_PATH "${CMAKE_INSTALL_PREFIX}/${HELPER_INSTALL_DIR}/cpupower-gui-helper")
+if(NOT DEFINED DBUS_SYSTEM_CONF_DIR)
+    set(DBUS_SYSTEM_CONF_DIR "share/dbus-1/system.d")
+endif()
+
+if(NOT DEFINED POLKIT_ACTIONS_DIR)
+    set(POLKIT_ACTIONS_DIR "share/polkit-1/actions")
+endif()
+
+if(NOT DEFINED SYSTEMD_SYSTEM_UNIT_DIR)
+    set(SYSTEMD_SYSTEM_UNIT_DIR "lib/systemd/system")
+endif()
 
 # Configure files with install paths
 configure_file(
@@ -78,8 +87,8 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cpupower-gui-helper.service
     OPTIONAL
 )
 
-message(STATUS "Helper will be installed to: ${CMAKE_INSTALL_PREFIX}/${HELPER_INSTALL_DIR}")
-message(STATUS "D-Bus services dir: ${CMAKE_INSTALL_PREFIX}/${DBUS_SYSTEM_SERVICES_DIR}")
-message(STATUS "D-Bus config dir: ${CMAKE_INSTALL_PREFIX}/${DBUS_SYSTEM_CONF_DIR}")
-message(STATUS "PolicyKit actions dir: ${CMAKE_INSTALL_PREFIX}/${POLKIT_ACTIONS_DIR}")
-message(STATUS "Systemd unit dir: ${CMAKE_INSTALL_PREFIX}/${SYSTEMD_SYSTEM_UNIT_DIR}")
+message(STATUS "Helper binary: ${CMAKE_INSTALL_PREFIX}/${HELPER_INSTALL_DIR}")
+message(STATUS "D-Bus services: ${CMAKE_INSTALL_PREFIX}/${DBUS_SYSTEM_SERVICES_DIR}")
+message(STATUS "D-Bus config: ${CMAKE_INSTALL_PREFIX}/${DBUS_SYSTEM_CONF_DIR}")
+message(STATUS "PolicyKit: ${CMAKE_INSTALL_PREFIX}/${POLKIT_ACTIONS_DIR}")
+message(STATUS "Systemd: ${CMAKE_INSTALL_PREFIX}/${SYSTEMD_SYSTEM_UNIT_DIR}")
