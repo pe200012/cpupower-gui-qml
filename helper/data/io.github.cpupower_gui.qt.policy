@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+
+<policyconfig>
+  <vendor>cpupower-gui-qml</vendor>
+  <vendor_url>https://github.com/pe200012/cpupower-gui-qml</vendor_url>
+  <icon_name>io.github.cpupower_gui.qt</icon_name>
+
+  <action id="io.github.cpupower_gui.qt.apply_runtime">
+    <description>Change CPU frequency settings</description>
+    <description xml:lang="de">CPU-Frequenzeinstellungen ändern</description>
+    <description xml:lang="zh_CN">更改CPU频率设置</description>
+    <message>Authentication is required to change CPU frequency settings at runtime.</message>
+    <message xml:lang="de">Authentifizierung ist erforderlich, um CPU-Frequenzeinstellungen zur Laufzeit zu ändern.</message>
+    <message xml:lang="zh_CN">需要身份验证才能在运行时更改CPU频率设置。</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="io.github.cpupower_gui.qt.apply_persist">
+    <description>Apply persistent CPU frequency changes</description>
+    <description xml:lang="de">Dauerhafte CPU-Frequenzänderungen anwenden</description>
+    <description xml:lang="zh_CN">应用持久CPU频率更改</description>
+    <message>Authentication is required to apply persistent CPU frequency changes.</message>
+    <message xml:lang="de">Authentifizierung ist erforderlich, um dauerhafte CPU-Frequenzänderungen anzuwenden.</message>
+    <message xml:lang="zh_CN">需要身份验证才能应用持久CPU频率更改。</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>
