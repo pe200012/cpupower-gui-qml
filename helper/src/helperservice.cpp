@@ -17,6 +17,32 @@
 HelperService::HelperService(QObject *parent)
     : QObject(parent)
 {
+    // Setup idle timer
+    m_idleTimer.setSingleShot(true);
+    connect(&m_idleTimer, &QTimer::timeout, this, &HelperService::onIdleTimeout);
+}
+
+void HelperService::setIdleTimeout(int seconds)
+{
+    m_idleTimeoutSecs = seconds;
+    if (m_idleTimeoutSecs > 0) {
+        resetIdleTimer();
+    } else {
+        m_idleTimer.stop();
+    }
+}
+
+void HelperService::resetIdleTimer()
+{
+    if (m_idleTimeoutSecs > 0) {
+        m_idleTimer.start(m_idleTimeoutSecs * 1000);
+    }
+}
+
+void HelperService::onIdleTimeout()
+{
+    qInfo() << "Idle timeout reached, shutting down helper service";
+    QCoreApplication::quit();
 }
 
 bool HelperService::registerService()
@@ -41,6 +67,10 @@ bool HelperService::registerService()
     }
     
     qInfo() << "D-Bus helper service registered successfully";
+    
+    // Start idle timer after successful registration
+    resetIdleTimer();
+    
     return true;
 }
 
@@ -50,6 +80,7 @@ bool HelperService::registerService()
 
 int HelperService::isauthorized()
 {
+    resetIdleTimer();
     return isAuthorized() ? 1 : 0;
 }
 
@@ -163,30 +194,35 @@ bool HelperService::checkPolkitAuthorization(const QString &sender, const QStrin
 
 QList<int> HelperService::get_cpus_available()
 {
+    resetIdleTimer();
     // Available CPUs = Present CPUs that can be brought online
     return get_cpus_present();
 }
 
 QList<int> HelperService::get_cpus_online()
 {
+    resetIdleTimer();
     QString content = readSysfsFile(QStringLiteral("%1/online").arg(SYS_CPU_PATH));
     return parseCpuList(content);
 }
 
 QList<int> HelperService::get_cpus_offline()
 {
+    resetIdleTimer();
     QString content = readSysfsFile(QStringLiteral("%1/offline").arg(SYS_CPU_PATH));
     return parseCpuList(content);
 }
 
 QList<int> HelperService::get_cpus_present()
 {
+    resetIdleTimer();
     QString content = readSysfsFile(QStringLiteral("%1/present").arg(SYS_CPU_PATH));
     return parseCpuList(content);
 }
 
 QStringList HelperService::get_cpu_governors(int cpu)
 {
+    resetIdleTimer();
     if (!isPresent(cpu) || !isOnline(cpu)) {
         return QStringList();
     }
@@ -197,6 +233,7 @@ QStringList HelperService::get_cpu_governors(int cpu)
 
 QStringList HelperService::get_cpu_energy_preferences(int cpu)
 {
+    resetIdleTimer();
     if (!isPresent(cpu) || !isOnline(cpu)) {
         return QStringList();
     }
@@ -207,6 +244,7 @@ QStringList HelperService::get_cpu_energy_preferences(int cpu)
 
 QString HelperService::get_cpu_governor(int cpu)
 {
+    resetIdleTimer();
     if (!isPresent(cpu) || !isOnline(cpu)) {
         return QString();
     }
@@ -216,6 +254,7 @@ QString HelperService::get_cpu_governor(int cpu)
 
 QString HelperService::get_cpu_energy_preference(int cpu)
 {
+    resetIdleTimer();
     if (!isPresent(cpu) || !isOnline(cpu)) {
         return QString();
     }
@@ -225,6 +264,7 @@ QString HelperService::get_cpu_energy_preference(int cpu)
 
 QList<int> HelperService::get_cpu_frequencies(int cpu)
 {
+    resetIdleTimer();
     QList<int> result;
     
     if (!isPresent(cpu) || !isOnline(cpu)) {
@@ -240,6 +280,7 @@ QList<int> HelperService::get_cpu_frequencies(int cpu)
 
 QList<int> HelperService::get_cpu_limits(int cpu)
 {
+    resetIdleTimer();
     QList<int> result;
     
     if (!isPresent(cpu) || !isOnline(cpu)) {
@@ -255,6 +296,7 @@ QList<int> HelperService::get_cpu_limits(int cpu)
 
 int HelperService::cpu_allowed_offline(int cpu)
 {
+    resetIdleTimer();
     QString path = QStringLiteral("%1/cpu%2/%3").arg(SYS_CPU_PATH).arg(cpu).arg(ONLINE_FILE);
     return QFile::exists(path) ? 1 : 0;
 }
@@ -265,6 +307,7 @@ int HelperService::cpu_allowed_offline(int cpu)
 
 int HelperService::update_cpu_settings(int cpu, int freq_min, int freq_max)
 {
+    resetIdleTimer();
     qDebug() << "update_cpu_settings called: cpu=" << cpu << "freq_min=" << freq_min << "freq_max=" << freq_max;
     
     if (!isAuthorized()) {
@@ -346,6 +389,7 @@ int HelperService::update_cpu_settings(int cpu, int freq_min, int freq_max)
 
 int HelperService::update_cpu_governor(int cpu, const QString &governor)
 {
+    resetIdleTimer();
     if (!isAuthorized()) {
         return -1;
     }
@@ -365,6 +409,7 @@ int HelperService::update_cpu_governor(int cpu, const QString &governor)
 
 int HelperService::update_cpu_energy_prefs(int cpu, const QString &pref)
 {
+    resetIdleTimer();
     if (!isAuthorized()) {
         return -1;
     }
@@ -394,6 +439,7 @@ int HelperService::update_cpu_energy_prefs(int cpu, const QString &pref)
 
 int HelperService::set_cpu_online(int cpu)
 {
+    resetIdleTimer();
     if (!isAuthorized()) {
         return -1;
     }
@@ -413,6 +459,7 @@ int HelperService::set_cpu_online(int cpu)
 
 int HelperService::set_cpu_offline(int cpu)
 {
+    resetIdleTimer();
     if (!isAuthorized()) {
         return -1;
     }

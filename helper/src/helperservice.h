@@ -11,12 +11,16 @@
 #include <QStringList>
 #include <QList>
 #include <QMap>
+#include <QTimer>
 
 /**
  * @brief D-Bus helper service for privileged CPU operations
  * 
  * This service runs as root and provides methods to modify CPU settings
  * that require elevated privileges. It uses PolicyKit for authorization.
+ * 
+ * The service will automatically exit after being idle for a configurable
+ * timeout (default 60 seconds) to conserve resources when not in use.
  */
 class HelperService : public QObject, protected QDBusContext
 {
@@ -28,6 +32,9 @@ public:
     ~HelperService() override = default;
 
     bool registerService();
+    
+    // Set idle timeout in seconds (0 = disabled)
+    void setIdleTimeout(int seconds);
 
 public Q_SLOTS:
     // Authorization
@@ -59,7 +66,12 @@ public Q_SLOTS:
     // Service control
     Q_NOREPLY void quit();
 
+private Q_SLOTS:
+    void onIdleTimeout();
+
 private:
+    void resetIdleTimer();
+    
     bool isAuthorized(const QString &actionId = QStringLiteral("io.github.cpupower_gui.qt.apply_runtime"));
     bool checkPolkitAuthorization(const QString &sender, const QString &actionId);
     
@@ -78,6 +90,10 @@ private:
 
     // Cache authorized senders
     QMap<QString, bool> m_authorizedSenders;
+    
+    // Idle timeout
+    QTimer m_idleTimer;
+    int m_idleTimeoutSecs = 60;  // Default 60 seconds
 
     static constexpr const char *SYS_CPU_PATH = "/sys/devices/system/cpu";
     static constexpr const char *CPUFREQ_DIR = "cpufreq";

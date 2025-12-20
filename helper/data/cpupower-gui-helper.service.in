@@ -15,6 +15,5 @@ PrivateTmp=yes
 NoNewPrivileges=no
 ReadWritePaths=/sys/devices/system/cpu
 
-[Install]
-WantedBy=multi-user.target
-Alias=dbus-io.github.cpupower_gui.qt.helper.service
+# No [Install] section - this service is started on-demand via D-Bus activation
+# The D-Bus service file (io.github.cpupower_gui.qt.helper.service) triggers this
