@@ -251,6 +251,9 @@ void Application::applyChanges()
             qint64 fmin = m_hasPendingMinFreq ? m_pendingMinFreq : m_sysfsReader->minFrequency(cpu);
             qint64 fmax = m_hasPendingMaxFreq ? m_pendingMaxFreq : m_sysfsReader->maxFrequency(cpu);
 
+            qDebug() << "Applying frequency to CPU" << cpu << ": min=" << fmin << "max=" << fmax
+                     << "(pending min:" << m_hasPendingMinFreq << "pending max:" << m_hasPendingMaxFreq << ")";
+
             m_dbusHelper->updateCpuSettingsAsync(cpu, static_cast<int>(fmin), static_cast<int>(fmax));
         }
 

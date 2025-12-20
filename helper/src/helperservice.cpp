@@ -5,6 +5,7 @@
 
 #include <QCoreApplication>
 #include <QDBusConnection>
+#include <QDBusInterface>
 #include <QDBusMessage>
 #include <QDBusReply>
 #include <QFile>
@@ -72,14 +73,15 @@ bool HelperService::checkPolkitAuthorization(const QString &sender, const QStrin
     
     QDBusConnection systemBus = QDBusConnection::systemBus();
     
-    QDBusMessage polkitMsg = QDBusMessage::createMethodCall(
+    // Build the CheckAuthorization call manually using QDBusMessage
+    QDBusMessage msg = QDBusMessage::createMethodCall(
         QStringLiteral("org.freedesktop.PolicyKit1"),
         QStringLiteral("/org/freedesktop/PolicyKit1/Authority"),
         QStringLiteral("org.freedesktop.PolicyKit1.Authority"),
         QStringLiteral("CheckAuthorization")
     );
     
-    // Create subject as (sa{sv})
+    // Build the subject structure: (sa{sv})
     QDBusArgument subjectArg;
     subjectArg.beginStructure();
     subjectArg << QStringLiteral("system-bus-name");
@@ -90,7 +92,7 @@ bool HelperService::checkPolkitAuthorization(const QString &sender, const QStrin
     subjectArg.endMap();
     subjectArg.endStructure();
     
-    // Details as a{ss} (map of string to string) - empty
+    // Build empty details map as a{ss}
     QDBusArgument detailsArg;
     detailsArg.beginMap(QMetaType::QString, QMetaType::QString);
     detailsArg.endMap();
@@ -98,43 +100,54 @@ bool HelperService::checkPolkitAuthorization(const QString &sender, const QStrin
     // Flags: AllowUserInteraction = 1
     quint32 flags = 1;
     
-    // Cancellation ID (empty)
-    QString cancellationId;
+    // Set arguments: subject, action_id, details, flags, cancellation_id
+    msg.setArguments({
+        QVariant::fromValue(subjectArg),
+        actionId,
+        QVariant::fromValue(detailsArg),
+        flags,
+        QString()  // empty cancellation_id
+    });
     
-    polkitMsg << QVariant::fromValue(subjectArg);   // subject (sa{sv})
-    polkitMsg << actionId;                           // action_id (s)
-    polkitMsg << QVariant::fromValue(detailsArg);   // details (a{ss})
-    polkitMsg << flags;                              // flags (u)
-    polkitMsg << cancellationId;                     // cancellation_id (s)
-    
-    QDBusMessage reply = systemBus.call(polkitMsg);
+    // Make the call (blocking, with timeout for user interaction)
+    QDBusMessage reply = systemBus.call(msg, QDBus::Block, 120000);  // 2 minute timeout
     
     if (reply.type() == QDBusMessage::ErrorMessage) {
         qWarning() << "PolicyKit authorization failed:" << reply.errorMessage();
         return false;
     }
     
-    // Parse result: (bba{ss})
     if (reply.arguments().isEmpty()) {
+        qWarning() << "PolicyKit returned empty response";
         return false;
     }
     
-    QDBusArgument resultArg = reply.arguments().at(0).value<QDBusArgument>();
+    // Parse result: (bba{ss})
+    // We need to extract just the first boolean (is_authorized)
+    QVariant resultVariant = reply.arguments().at(0);
+    
+    // The result is a struct, extract it via QDBusArgument
+    const QDBusArgument resultArg = resultVariant.value<QDBusArgument>();
+    
     bool isAuthorized = false;
     bool isChallenge = false;
     
+    // Read the struct
     resultArg.beginStructure();
-    resultArg >> isAuthorized >> isChallenge;
-    // Skip the details map
+    resultArg >> isAuthorized;
+    resultArg >> isChallenge;
+    // Must read the a{ss} map to fully consume the struct
     resultArg.beginMap();
     while (!resultArg.atEnd()) {
-        QString key, value;
         resultArg.beginMapEntry();
+        QString key, value;
         resultArg >> key >> value;
         resultArg.endMapEntry();
     }
     resultArg.endMap();
     resultArg.endStructure();
+    
+    qDebug() << "PolicyKit authorization result: authorized=" << isAuthorized << "challenge=" << isChallenge;
     
     // Cache result (only if authorized without challenge)
     if (isAuthorized && !isChallenge) {
@@ -252,28 +265,83 @@ int HelperService::cpu_allowed_offline(int cpu)
 
 int HelperService::update_cpu_settings(int cpu, int freq_min, int freq_max)
 {
+    qDebug() << "update_cpu_settings called: cpu=" << cpu << "freq_min=" << freq_min << "freq_max=" << freq_max;
+    
     if (!isAuthorized()) {
+        qWarning() << "Not authorized";
         return -1;
     }
     
     if (!isPresent(cpu) || !isOnline(cpu)) {
+        qWarning() << "CPU" << cpu << "not present or not online";
         return -1;
     }
     
     QString basePath = cpufreqPath(cpu);
     
-    // Write min frequency first (to avoid min > max temporarily)
-    if (!writeSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MIN_FREQ), 
-                        QString::number(freq_min))) {
-        return -13;
+    // Read current values to determine write order
+    QString curMinStr = readSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MIN_FREQ)).trimmed();
+    QString curMaxStr = readSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MAX_FREQ)).trimmed();
+    int curMin = curMinStr.toInt();
+    int curMax = curMaxStr.toInt();
+    
+    qDebug() << "Current values: min=" << curMin << "max=" << curMax;
+    qDebug() << "Target values: min=" << freq_min << "max=" << freq_max;
+    
+    // Determine the correct order to avoid temporary invalid states
+    // Rule: min <= max must always be true
+    // If new_max < cur_min, we must lower min first
+    // If new_min > cur_max, we must raise max first
+    
+    bool success = true;
+    
+    if (freq_max < curMin) {
+        // New max is lower than current min - must lower min first
+        qDebug() << "Lowering min first (new max < current min)";
+        if (!writeSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MIN_FREQ), 
+                            QString::number(freq_min))) {
+            qWarning() << "Failed to write min frequency";
+            success = false;
+        }
+        if (!writeSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MAX_FREQ), 
+                            QString::number(freq_max))) {
+            qWarning() << "Failed to write max frequency";
+            success = false;
+        }
+    } else if (freq_min > curMax) {
+        // New min is higher than current max - must raise max first
+        qDebug() << "Raising max first (new min > current max)";
+        if (!writeSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MAX_FREQ), 
+                            QString::number(freq_max))) {
+            qWarning() << "Failed to write max frequency";
+            success = false;
+        }
+        if (!writeSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MIN_FREQ), 
+                            QString::number(freq_min))) {
+            qWarning() << "Failed to write min frequency";
+            success = false;
+        }
+    } else {
+        // No conflict - write in standard order (min first, then max)
+        qDebug() << "Standard order (no conflict)";
+        if (!writeSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MIN_FREQ), 
+                            QString::number(freq_min))) {
+            qWarning() << "Failed to write min frequency";
+            success = false;
+        }
+        if (!writeSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MAX_FREQ), 
+                            QString::number(freq_max))) {
+            qWarning() << "Failed to write max frequency";
+            success = false;
+        }
     }
     
-    if (!writeSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MAX_FREQ), 
-                        QString::number(freq_max))) {
-        return -13;
-    }
+    // Verify the result
+    QString newMinStr = readSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MIN_FREQ)).trimmed();
+    QString newMaxStr = readSysfsFile(QStringLiteral("%1/%2").arg(basePath, SCALING_MAX_FREQ)).trimmed();
+    qDebug() << "After write: min=" << newMinStr << "max=" << newMaxStr;
     
-    return 0;
+    return success ? 0 : -13;
 }
 
 int HelperService::update_cpu_governor(int cpu, const QString &governor)
